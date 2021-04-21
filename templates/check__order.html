@@ -1,6 +1,6 @@
 {% extends "Recep_layout.html" %}
 <!--title part-->
-{% block title %}Order Details{% endblock %}
+{% block title %}Stock Details{% endblock %}
 <!--head part-->
 {% block head %} {{ super() }}
 <style>
@@ -42,19 +42,13 @@
   <table class="table">
     <thead>
       <tr>
-        <th scope="col">Blood Bank No</th>
-        <th scope="col">Name</th>
-        <th scope="col">Phone</th>
-        <th scope="col">Address</th>
-        <th scope="col">Available blood stocks</th>
+        <th scope="col">Blood type</th>
+        <th scope="col">Units Available</th>
       </tr>
 {% for i in data %}
       <tr>
-        <td>{{i.blood_bank_no}}</td>
-        <td>{{i.name}}</td>
-        <td>{{i.phone}}</td>
-        <td>{{i.address}}</td>
-        <td><a href="/check_orders/{{i.blood_bank_no}}"><button class="btn btn-success">Check Availability</button></a> </td>
+        <td>{{i[1]}}</td>
+        <td>{{i[0]}}</td>
       </tr>
     {% endfor %}
     </thead>

@@ -1,6 +1,7 @@
 from flask import Flask,redirect,render_template,url_for,request,flash,session
 from flask_sqlalchemy import SQLAlchemy
 import sqlalchemy
+from sqlalchemy import func
 from passlib.hash import sha256_crypt
 import os
 app = Flask(__name__)
@@ -59,6 +60,10 @@ class Donor(db.Model):
     gender = db.Column(db.String(255),nullable=False)
     blood_type = db.Column(db.String(5),nullable=False)
 
+    #try
+    blood_bank = db.Column(db.Integer,nullable=False)
+    Donations = db.relationship('Donation', backref='donor', lazy=True,cascade='all,delete')
+
     def __repr__(self):
         return "<Donor '{}'>".format(self.name)
 
@@ -66,10 +71,13 @@ class Donation(db.Model):
     id = db.Column(db.Integer,primary_key=True)
     units = db.Column(db.String(15),nullable=False)
     blood_type = db.Column(db.String(12),nullable=False)
-    candidate_no = db.Column(db.Integer,db.ForeignKey('donor.candidate_no'),nullable=False)
+    blood_bank = db.Column(db.Integer, nullable=False)
+    donor_id = db.Column(db.Integer, db.ForeignKey('donor.candidate_no'),
+        nullable=False)
+
 
     def __repr__(self):
-        return "<Donation '{}'>".format(self.name)
+        return "<Donation '{}'>".format(self.id)
 
 #custom login command
 # class Login:
@@ -113,7 +121,11 @@ def bankforpass():
 
 @app.route('/order')
 def order():
-    return render_template('order.html')
+    if 'receptionist' in session:
+        data = Blood_bank.query.all()
+        return render_template('order.html',data=data)
+    return redirect(url_for("receplog"))
+
 
 @app.route('/Admindash')
 def Admindash():
@@ -127,7 +139,9 @@ def Admindash():
 
 @app.route('/Hosreg')
 def Hosreg():
-    return render_template('Hos_reg.html')
+    if 'admin' in session:
+        return render_template('Hos_reg.html')
+    return redirect(url_for("Adminlog"))
 
 @app.route('/Hoslog')
 def Hoslog():
@@ -144,7 +158,9 @@ def Hosdash():
 
 @app.route('/Bloodbank_reg')
 def Bloodbank_reg():
-    return render_template('bloodbank_form.html')
+    if 'admin' in session:
+        return render_template('bloodbank_form.html')
+    return redirect(url_for("Adminlog"))
 
 @app.route('/bloodbank_login')
 def bloodbank_login():
@@ -204,7 +220,11 @@ def forgotpassword_recep():
 
 @app.route('/changepassword')
 def changepassword():
-    return render_template('Change_password.html') 
+    return render_template('Change_password.html')
+
+@app.route('/fcpassword_bank')
+def fcpassword_bank():
+    return render_template('forgot_password_bank.html')
 
 @app.route('/changepasswordrecep')
 def changepasswordrecep():
@@ -334,7 +354,7 @@ def recep_reg_data():
                 return redirect(url_for("recepreg"))
             flash("Name already exists", 'error')
             return redirect(url_for("recepreg"))
-        flash("You are not authorized to perform this action","danger")
+        flash("You are not authorized to perform this action","error")
         return redirect(url_for("recepreg"))
 
 @app.route("/recep_log_data",methods=['POST'])
@@ -362,36 +382,39 @@ def recep_log_data():
 @app.route("/hos_reg_data",methods=['POST'])
 def hos_reg_data():
     if request.method == "POST":
-        hosid = request.form['hos_id']
-        name = request.form['name']
-        phno = request.form['phno']
-        address = request.form['address']
-        id_check = Hospital.query.filter_by(hospitalid=hosid).first()
-        if not id_check:
-            name_check = Hospital.query.filter_by(name=name).first()
-            if not name_check:
-                phno_check = Hospital.query.filter_by(phno=phno).first()
-                if not phno_check:
-                    address_check = Hospital.query.filter_by(address=address).first()
-                    if not address_check:
-                        hash_pasw = sha256_crypt.hash(phno)
-                        hospital = Hospital(hospitalid=hosid,name=name,phno=phno,address=address,password=hash_pasw)
-                        db.session.add(hospital)
-                        db.session.commit()
-                        flash("Registration success","success")
-                        return redirect(url_for("Admindash"))
+        if 'admin' in session:
+            hosid = request.form['hos_id']
+            name = request.form['name']
+            phno = request.form['phno']
+            address = request.form['address']
+            id_check = Hospital.query.filter_by(hospitalid=hosid).first()
+            if not id_check:
+                name_check = Hospital.query.filter_by(name=name).first()
+                if not name_check:
+                    phno_check = Hospital.query.filter_by(phno=phno).first()
+                    if not phno_check:
+                        address_check = Hospital.query.filter_by(address=address).first()
+                        if not address_check:
+                            hash_pasw = sha256_crypt.hash(phno)
+                            hospital = Hospital(hospitalid=hosid,name=name,phno=phno,address=address,password=hash_pasw)
+                            db.session.add(hospital)
+                            db.session.commit()
+                            flash("Registration success","success")
+                            return redirect(url_for("Admindash"))
+                        else:
+                            flash("Address already exists",'error')
+                            return redirect(url_for("Hosreg"))
                     else:
-                        flash("Address already exists",'error')
+                        flash("Phone number already exists", 'error')
                         return redirect(url_for("Hosreg"))
                 else:
-                    flash("Phone number already exists", 'error')
+                    flash("Hospital Name already exists", 'error')
                     return redirect(url_for("Hosreg"))
             else:
-                flash("Hospital Name already exists", 'error')
+                flash("ID has already been taken", 'error')
                 return redirect(url_for("Hosreg"))
-        else:
-            flash("ID has already been taken", 'error')
-            return redirect(url_for("Hosreg"))
+        flash("you are not authorized", 'error')
+        return redirect(url_for("Adminlog"))
 
 @app.route("/hos_login_data",methods=['POST'])
 def hos_login_data():
@@ -421,25 +444,28 @@ def hos_login_data():
 @app.route("/blood_bank_reg_data",methods=['POST'])
 def blood_bank_reg_data():
     if request.method == 'POST':
-        bank_no = request.form['bank_no']
-        name = request.form['name']
-        phone = request.form['phone']
-        address = request.form['address']
-        bank_no = request.form['bank_no']
-        bank_check = Blood_bank.query.filter_by(blood_bank_no=bank_no).first()
-        if not bank_check:
-            name_check = Blood_bank.query.filter_by(name=name).first()
-            if not name_check:
-                has_pasw = sha256_crypt.hash(phone)
-                bank = Blood_bank(blood_bank_no=bank_no,name=name,phone=phone,address=address,password=has_pasw)
-                db.session.add(bank)
-                db.session.commit()
-                flash("Blood bank added successfully","success")
-                return redirect(url_for("Admindash"))
-            flash("Name already taken",'error')
+        if 'admin' in session:
+            bank_no = request.form['bank_no']
+            name = request.form['name']
+            phone = request.form['phone']
+            address = request.form['address']
+            bank_no = request.form['bank_no']
+            bank_check = Blood_bank.query.filter_by(blood_bank_no=bank_no).first()
+            if not bank_check:
+                name_check = Blood_bank.query.filter_by(name=name).first()
+                if not name_check:
+                    has_pasw = sha256_crypt.hash(phone)
+                    bank = Blood_bank(blood_bank_no=bank_no,name=name,phone=phone,address=address,password=has_pasw)
+                    db.session.add(bank)
+                    db.session.commit()
+                    flash("Blood bank added successfully","success")
+                    return redirect(url_for("Admindash"))
+                flash("Name already taken",'error')
+                return redirect(url_for("Bloodbank_reg"))
+            flash("Bank No already taken", 'error')
             return redirect(url_for("Bloodbank_reg"))
-        flash("Bank No already taken", 'error')
-        return redirect(url_for("Bloodbank_reg"))
+        flash("you are not authorized", "error")
+        return redirect(url_for("Adminlog"))
 
 #blood bank login
 @app.route("/bank_login_data",methods=['POST'])
@@ -457,57 +483,64 @@ def bank_login_data():
                 session['blood_bank'] = True
                 flash("logged in","success")
                 return redirect(url_for("bloodbank_dash"))
-            flash("Invalid credentials","success")
+            flash("Invalid credentials","error")
             return redirect(url_for("bloodbank_login"))
-        flash("Invalid credentials", "success")
+        flash("Invalid credentials", "error")
         return redirect(url_for("bloodbank_login"))
 
 #donor details register
 @app.route("/donor_data",methods=['POST'])
 def donor_data():
     if request.method == 'POST':
-        cand_no = request.form['cand_no']
-        name = request.form['name']
-        phone = request.form['phone']
-        email = request.form['email']
-        address = request.form['address']
-        gender = request.form['gender']
-        blood_type = request.form['types']
-        check_cand_no = Donor.query.filter_by(candidate_no=cand_no).first()
-        if not check_cand_no:
-            check_phone = Donor.query.filter_by(phone=phone).first()
-            if not check_phone:
-                check_email = Donor.query.filter_by(email=email).first()
-                if not check_email:
-                    donor = Donor(candidate_no=cand_no,name=name,phone=phone,email=email,address=address,gender=gender,blood_type=blood_type)
-                    db.session.add(donor)
-                    db.session.commit()
-                    flash("Donor regisered successfully","success")
+        if 'blood_bank' in session:
+            cand_no = request.form['cand_no']
+            name = request.form['name']
+            phone = request.form['phone']
+            email = request.form['email']
+            address = request.form['address']
+            gender = request.form['gender']
+            blood_type = request.form['types']
+            check_cand_no = Donor.query.filter_by(candidate_no=cand_no).first()
+            if not check_cand_no:
+                check_phone = Donor.query.filter_by(phone=phone).first()
+                if not check_phone:
+                    check_email = Donor.query.filter_by(email=email).first()
+                    if not check_email:
+                        donor = Donor(candidate_no=cand_no,name=name,phone=phone,email=email,address=address,gender=gender,blood_type=blood_type,blood_bank=session['blood_bank_no'])
+                        db.session.add(donor)
+                        db.session.commit()
+                        flash("Donor regisered successfully","success")
+                        return redirect(url_for("donorform"))
+                    flash("EMail already used","error")
                     return redirect(url_for("donorform"))
-                flash("EMail already used","error")
+                flash("Phone already used", "error")
                 return redirect(url_for("donorform"))
-            flash("Phone already used", "error")
+            flash("Candidate number already used", "error")
             return redirect(url_for("donorform"))
-        flash("Candidate number already used", "error")
-        return redirect(url_for("donorform"))
+        flash("you are not authorized", "error")
+        return redirect(url_for("bloodbank_login"))
 
 #blood donation details
 @app.route("/donation_data",methods=['POST'])
 def donation_data():
     if request.method == 'POST':
-        cand_no = request.form['cand_no']
-        units = request.form['unit']
-        blood_type = request.form['types']
-        try:
-            donations = Donation(units=units,blood_type=blood_type,candidate_no=cand_no)
-            db.session.add(donations)
-            db.session.commit()
-        except sqlalchemy.exc.IntegrityError:
-            flash("Please verify candidate number", "error")
-            return redirect(url_for("donordetails"))
+        if 'blood_bank' in session:
+            cand_no = request.form['cand_no']
+            units = request.form['unit']
+            blood_type = request.form['types']
+            try:
+                donor = Donor.query.filter_by(candidate_no=cand_no).first()
+                donations = Donation(units=units,blood_type=blood_type,donor=donor,blood_bank=session['blood_bank_no'])
+                db.session.add(donations)
+                db.session.commit()
+            except sqlalchemy.exc.IntegrityError:
+                flash("Please verify candidate number", "error")
+                return redirect(url_for("donordetails"))
 
-        flash("Donation stored","success")
-        return redirect(url_for("donordetails"))
+            flash("Donation stored","success")
+            return redirect(url_for("donordetails"))
+        flash("you are not authorized", "error")
+        return redirect(url_for("bloodbank_login"))
 
 #receptionist password change
 @app.route("/recep_changepass",methods=['POST'])
@@ -536,7 +569,32 @@ def recep_changepass():
         flash("Please login as a receptionist","error")
         return redirect(url_for("receplog"))
 
-
+#blood bank password change
+@app.route("/bankpasschange",methods=['POST'])
+def bankpasschange():
+    if 'blood_bank' in session:
+        if request.method == 'POST':
+            name = request.form['name']
+            pass1 = request.form['pass1']
+            pass2 = request.form['pass2']
+            if pass1 == pass2:
+                check_email = Blood_bank.query.filter_by(name=name).first()
+                if check_email:
+                    hash_pasw = sha256_crypt.hash(pass1)
+                    data = Blood_bank.query.filter_by(name=name).first()
+                    data.password = hash_pasw
+                    db.session.commit()
+                    flash("Password changed successfully","success")
+                    return redirect(url_for("bloodbank_dash"))
+                else:
+                    flash("Invalid name","error")
+                    return redirect(url_for("bankforpass"))
+            else:
+                flash("Passwords dont match","error")
+                return redirect(url_for("bankforpass"))
+    else:
+        flash("Please login as a Blood bank admin","error")
+        return redirect(url_for("bloodbank_login"))
 
 #hospital password change
 @app.route("/hospasschange",methods=['POST'])
@@ -588,6 +646,29 @@ def fpass_admin():
         else:
             flash("Passwords dont match","error")
             return redirect(url_for("forgotpassword"))
+
+#Blood bank forgot password
+@app.route("/fpass_bank",methods=['POST'])
+def fpass_bank():
+    if request.method == 'POST':
+        email = request.form['email']
+        pass1 = request.form['pass1']
+        pass2 = request.form['pass2']
+        if pass1 == pass2:
+            check_email = Blood_bank.query.filter_by(name=email).first()
+            if check_email:
+                hash_pasw = sha256_crypt.hash(pass1)
+                data = Blood_bank.query.filter_by(name=email).first()
+                data.password = hash_pasw
+                db.session.commit()
+                flash("Password changed successfully","success")
+                return redirect(url_for("bloodbank_login"))
+            else:
+                flash("Name not registered","error")
+                return redirect(url_for("fcpassword_bank"))
+        else:
+            flash("Passwords dont match","error")
+            return redirect(url_for("fcpassword_bank"))
 
 #hospital forgot password
 @app.route("/fpass_hos",methods=['POST'])
@@ -1444,7 +1525,8 @@ def donation_update_data(id):
             cand_no = request.form['cand_no']
             units = request.form['unit']
             blood_type = request.form['types']
-            donations = Donation(units=units,blood_type=blood_type,candidate_no=cand_no)
+            donor = Donor.query.filter_by(candidate_no=cand_no).first()
+            donations = Donation(units=units,blood_type=blood_type,donor=donor)
             db.session.add(donations)
             db.session.commit()
             flash("Details updated successfully","success")
@@ -1452,6 +1534,16 @@ def donation_update_data(id):
     else:
         flash("Please login as a admin","error")
         return redirect(url_for("Adminlog"))
+
+@app.route("/check_orders/<int:id>")
+def check_orders(id):
+    # name = Donor.query.filter_by(candidate_no=123).first()
+    # print(name.Donations)
+    v = db.session.query(func.sum(Donation.units), Donation.blood_type).group_by(Donation.blood_type).filter(Donation.blood_bank == id)
+    return render_template("check__order.html",data=v)
+
+
+
 
 if __name__ == '__main__':
     app.run(debug=True) 
